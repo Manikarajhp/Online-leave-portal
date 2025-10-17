@@ -16,19 +16,36 @@ class Base(DeclarativeBase):
     pass
 
 app = Flask(__name__)
+
+# Determine whether we're running in production. This checks common env vars
+# but you can customize detection logic as needed.
+is_production = (
+    os.environ.get("FLASK_ENV", "").lower() == "production"
+    or os.environ.get("ENV", "").lower() == "production"
+    or os.environ.get("PRODUCTION", "").lower() == "1"
+)
+
 # Prefer SESSION_SECRET, fall back to SECRET_KEY env var for compatibility
 secret = os.environ.get("SESSION_SECRET") or os.environ.get("SECRET_KEY")
-if not secret:
-    # Generate an ephemeral secret for development so sessions work.
-    # WARNING: this is not suitable for production because it changes on each
-    # startup and will invalidate existing sessions. Set SESSION_SECRET in
-    # your environment for a persistent secret.
-    secret = secrets.token_urlsafe(32)
-    logging.warning(
-        "SESSION_SECRET not set; generated ephemeral secret key. Set SESSION_SECRET for persistent sessions."
-    )
+if is_production:
+    # In production we require a persistent session secret
+    if not secret:
+        raise RuntimeError(
+            "SESSION_SECRET must be set in production. Set SESSION_SECRET environment variable to a long, random value."
+        )
+else:
+    if not secret:
+        # Generate an ephemeral secret for development so sessions work.
+        # NOTE: this is not suitable for production because it changes on each
+        # startup and will invalidate existing sessions. Set SESSION_SECRET in
+        # your environment for a persistent secret.
+        secret = secrets.token_urlsafe(32)
+        logging.info(
+            "SESSION_SECRET not set; generated ephemeral secret key for development."
+        )
+
 app.secret_key = secret
-app.config['SECRET_KEY'] = secret
+app.config["SECRET_KEY"] = secret
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 # Use DATABASE_URL from environment if provided, otherwise fall back to an
 # instance-local SQLite database so the app can run in development without
